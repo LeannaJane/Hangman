@@ -1,25 +1,41 @@
 import React, { useEffect, useMemo, useState } from "react"
 import HangManComponent from "./HangMan"
 
-const WORDS = [
-  "FEDORA",
-  "JAVASCRIPT",
-  "REACT",
-  "COMPUTER",
-  "PROGRAM",
-  "HANGMAN",
-  "TAILWIND",
-]
+const FALLBACK_WORD = "HANGMAN"
 
 function App() {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("")
-  const [word, setWord] = useState(WORDS[0])
+  const [word, setWord] = useState(FALLBACK_WORD)
   const [guessed, setGuessed] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState("")
+
+  async function loadWord() {
+    setIsLoading(true)
+    setError("")
+
+    try {
+      const response = await fetch("/api/hangman/word")
+
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`)
+      }
+
+      const data = await response.json()
+      setWord(String(data.word || FALLBACK_WORD).toUpperCase())
+      setGuessed([])
+    } catch (fetchError) {
+      setWord(FALLBACK_WORD)
+      setGuessed([])
+      setError("Backend unavailable, using fallback word.")
+      console.error(fetchError)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   useEffect(() => {
-    // pick a random word on mount
-    setWord(WORDS[Math.floor(Math.random() * WORDS.length)])
-    setGuessed([])
+    void loadWord()
   }, [])
 
   const normalizedWord = useMemo(() => word.toUpperCase(), [word])
@@ -35,8 +51,7 @@ function App() {
   const isLose = wrongGuesses >= 5
 
   const resetGame = () => {
-    setWord(WORDS[Math.floor(Math.random() * WORDS.length)])
-    setGuessed([])
+    void loadWord()
   }
 
   return (
@@ -48,6 +63,8 @@ function App() {
             HANGMAN
           </h1>
         </div>
+
+        {error && <div className="mb-4 text-sm font-medium text-red-500">{error}</div>}
 
         <div className="w-full bg-gradient-to-br from-purple-900/40 to-pink-900/20 border border-purple-800/60 rounded-2xl p-6 flex items-center justify-center shadow-inner h-96">
           <HangManComponent wrongGuesses={wrongGuesses} className="w-full h-full text-pink-50" />
@@ -67,8 +84,8 @@ function App() {
         <div className="w-full mb-4 flex items-center justify-between">
           <div className="text-sm text-pink-200">Wrong: {wrongGuesses} / 5</div>
           <div>
-            <button onClick={resetGame} className="px-3 py-1 text-sm rounded bg-pink-600 hover:bg-pink-500 text-white">
-              New Game
+            <button onClick={resetGame} className="px-3 py-1 text-sm rounded bg-pink-600 hover:bg-pink-500 text-white disabled:opacity-70" disabled={isLoading}>
+              {isLoading ? "Loading..." : "New Game"}
             </button>
           </div>
         </div>

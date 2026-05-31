@@ -64,3 +64,9 @@ dist/
 
 # Vite cache
 .vite/
+
+# Hangman runtime data
+api/player-scores.json
+api/*.db
+api/*.sqlite
+api/*.sqlite3

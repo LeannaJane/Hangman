@@ -2,25 +2,68 @@ import React, { useEffect, useState } from "react";
 import HangManComponent from "./HangMan";
 
 const FALLBACK_WORD = "HANGMAN";
+const HINT_COST = 5;
+const STARTING_POINTS = 25;
 
 function GameScreen({ difficulty, playerName, onBackToMenu }) {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
   const [word, setWord] = useState(FALLBACK_WORD);
   const [guessed, setGuessed] = useState([]);
   const [pointsForWord, setPointsForWord] = useState(0);
-  const [score, setScore] = useState(0);
+  const [score, setScore] = useState(STARTING_POINTS);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
-  const scoreKey = `hangman-score-${(playerName || "player").trim().toLowerCase()}`;
+  const [message, setMessage] = useState("");
+  const [scoreLoaded, setScoreLoaded] = useState(false);
+  const playerId = (playerName || "player").trim() || "player";
 
   useEffect(() => {
-    const savedScore = Number(localStorage.getItem(scoreKey) || 0);
-    setScore(Number.isFinite(savedScore) ? savedScore : 0);
-  }, [scoreKey]);
+    let cancelled = false;
+
+    async function loadScore() {
+      setScoreLoaded(false);
+
+      try {
+        const response = await fetch(`/api/hangman/score?player=${encodeURIComponent(playerId)}`);
+        if (!response.ok) throw new Error(`Status: ${response.status}`);
+
+        const data = await response.json();
+        if (!cancelled) {
+          setScore(Number(data.score ?? STARTING_POINTS));
+          setScoreLoaded(true);
+        }
+      } catch (fetchError) {
+        if (!cancelled) {
+          setScore(STARTING_POINTS);
+          setScoreLoaded(true);
+        }
+        console.error(fetchError);
+      }
+    }
+
+    void loadScore();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [playerId]);
+
+  useEffect(() => {
+    if (!scoreLoaded) return;
+
+    void fetch("/api/hangman/score", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ player: playerId, score }),
+    });
+  }, [score, scoreLoaded, playerId]);
 
   async function loadWord() {
     setIsLoading(true);
     setError("");
+    setMessage("");
 
     try {
       const url = difficulty && difficulty !== "any" 
@@ -54,6 +97,24 @@ function GameScreen({ difficulty, playerName, onBackToMenu }) {
     }
   };
 
+  const buyHint = () => {
+    if (score < HINT_COST || isWin || isLose) return;
+
+    const hiddenLetters = Array.from(new Set(word.split(""))).filter(
+      (letter) => !guessed.includes(letter)
+    );
+
+    if (hiddenLetters.length === 0) {
+      setMessage("No hint available.");
+      return;
+    }
+
+    const randomLetter = hiddenLetters[Math.floor(Math.random() * hiddenLetters.length)];
+    setScore((s) => s - HINT_COST);
+    setGuessed((g) => [...g, randomLetter]);
+    setMessage(`Hint used: -${HINT_COST} pts`);
+  };
+
   // Derived Values 
   const wrongGuesses = guessed.filter((l) => !word.includes(l)).length;
   const uniqueLetters = Array.from(new Set(word.split("")));
@@ -67,10 +128,6 @@ function GameScreen({ difficulty, playerName, onBackToMenu }) {
       setScore((s) => s + awarded);
     }
   }, [isWin]);
-
-  useEffect(() => {
-    localStorage.setItem(scoreKey, String(score));
-  }, [score, scoreKey]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-pink-50 to-purple-100 p-4 font-sans selection:bg-pink-500 selection:text-white">
@@ -119,14 +176,25 @@ function GameScreen({ difficulty, playerName, onBackToMenu }) {
           <div className="text-xs font-bold text-purple-900 uppercase tracking-wider">
             Strikes: <span className="text-red-600 font-black">{wrongGuesses} / 5</span>
           </div>
-          <button 
-            onClick={loadWord} 
-            className="px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-xl bg-pink-600 hover:bg-pink-500 text-white shadow transition disabled:opacity-70" 
-            disabled={isLoading}
-          >
-            {isLoading ? "Loading..." : "Next Word"}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={buyHint}
+              className="px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-xl bg-purple-600 hover:bg-purple-500 text-white shadow transition disabled:opacity-70"
+              disabled={score < HINT_COST || isWin || isLose || isLoading}
+            >
+              Hint -{HINT_COST}
+            </button>
+            <button 
+              onClick={loadWord} 
+              className="px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-xl bg-pink-600 hover:bg-pink-500 text-white shadow transition disabled:opacity-70" 
+              disabled={isLoading}
+            >
+              {isLoading ? "Loading..." : "Next Word"}
+            </button>
+          </div>
         </div>
+
+        {message && <div className="mb-3 text-xs font-medium text-purple-900">{message}</div>}
 
         {/* Metadata Breakdown */}
         <div className="w-full mb-4 flex items-center justify-between gap-3 bg-purple-900/10 p-2.5 rounded-xl border border-purple-900/5">

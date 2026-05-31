@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -10,6 +12,73 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+}
+
+var scoresPath = Path.Combine(app.Environment.ContentRootPath, "player-scores.json");
+var scoresLock = new object();
+Dictionary<string, int> playerScores = LoadScores();
+
+string NormalizePlayerName(string? playerName)
+{
+    var value = (playerName ?? "player").Trim();
+    return string.IsNullOrWhiteSpace(value) ? "player" : value.ToLowerInvariant();
+}
+
+Dictionary<string, int> LoadScores()
+{
+    if (!File.Exists(scoresPath))
+    {
+        return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    try
+    {
+        var json = File.ReadAllText(scoresPath);
+        var data = JsonSerializer.Deserialize<Dictionary<string, int>>(json);
+        return data is null
+            ? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, int>(data, StringComparer.OrdinalIgnoreCase);
+    }
+    catch
+    {
+        return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    }
+}
+
+void SaveScores()
+{
+    var json = JsonSerializer.Serialize(playerScores, new JsonSerializerOptions { WriteIndented = true });
+    File.WriteAllText(scoresPath, json);
+}
+
+int GetOrCreatePlayerScore(string playerName)
+{
+    var normalizedName = NormalizePlayerName(playerName);
+
+    lock (scoresLock)
+    {
+        if (playerScores.TryGetValue(normalizedName, out var existingScore))
+        {
+            return existingScore;
+        }
+
+        playerScores[normalizedName] = 25;
+        SaveScores();
+        return 25;
+    }
+}
+
+int SavePlayerScore(string playerName, int score)
+{
+    var normalizedName = NormalizePlayerName(playerName);
+    var safeScore = Math.Max(0, score);
+
+    lock (scoresLock)
+    {
+        playerScores[normalizedName] = safeScore;
+        SaveScores();
+        return safeScore;
+    }
 }
 
 // Load words from `words.txt` in the api folder.
@@ -95,6 +164,29 @@ app.MapGet("/api/hangman/word", (HttpRequest req) =>
 })
 .WithName("GetHangmanWord");
 
+app.MapGet("/api/hangman/score", (HttpRequest req) =>
+{
+    var playerName = req.Query["player"].ToString();
+    var score = GetOrCreatePlayerScore(playerName);
+    return Results.Ok(new { player = NormalizePlayerName(playerName), score });
+})
+.WithName("GetPlayerScore");
+
+app.MapPost("/api/hangman/score", async (HttpRequest req) =>
+{
+    var body = await req.ReadFromJsonAsync<PlayerScoreUpdateRequest>();
+    if (body is null)
+    {
+        return Results.BadRequest("Missing score payload");
+    }
+
+    var score = SavePlayerScore(body.Player, body.Score);
+    return Results.Ok(new { player = NormalizePlayerName(body.Player), score });
+})
+.WithName("SavePlayerScore");
+
 app.Run();
 
 record HangmanWordResponse(string Word);
+
+record PlayerScoreUpdateRequest(string Player, int Score);

@@ -18,6 +18,18 @@ export function WelcomeScreen({
   onStartGame,
 }: WelcomeScreenProps) {
   const difficulties: Difficulty[] = ["any", "easy", "medium", "hard"];
+  const [error, setError] = React.useState("");
+  const canStart = playerName.trim().length > 0;
+
+  const handleStartGame = () => {
+    if (!canStart) {
+      setError("Please enter a name to start.");
+      return;
+    }
+
+    setError("");
+    onStartGame();
+  };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-pink-50 to-purple-100 p-4 font-sans selection:bg-pink-500 selection:text-white">
@@ -36,10 +48,15 @@ export function WelcomeScreen({
           </label>
           <input
             value={playerName}
-            onChange={(e) => setPlayerName(e.target.value)}
+            onChange={(e) => {
+              setPlayerName(e.target.value);
+              if (error) setError("");
+            }}
             placeholder="Enter name"
             className="w-full mb-4 px-3 py-2 rounded-xl border border-purple-200 bg-white text-purple-900"
           />
+
+          {error && <div className="mb-3 text-sm text-red-600 font-medium">{error}</div>}
 
           <label className="block text-sm font-bold text-purple-900 mb-3 uppercase tracking-wider">
             Select Difficulty
@@ -62,8 +79,9 @@ export function WelcomeScreen({
         </div>
 
         <button
-          onClick={onStartGame}
-          className="w-full py-4 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white font-black text-lg rounded-2xl shadow-lg hover:shadow-xl transition duration-200 tracking-wider uppercase active:scale-[0.98]"
+          onClick={handleStartGame}
+          disabled={!canStart}
+          className="w-full py-4 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white font-black text-lg rounded-2xl shadow-lg hover:shadow-xl transition duration-200 tracking-wider uppercase active:scale-[0.98] disabled:opacity-50"
         >
           Play Game
         </button>

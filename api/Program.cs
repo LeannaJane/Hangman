@@ -12,28 +12,89 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-var summaries = new[]
+// Load words from `words.txt` in the api folder.
+// If the file is missing, use a small fallback list.
+var contentRoot = app.Environment.ContentRootPath;
+var wordsPath = Path.Combine(contentRoot, "words.txt");
+string[] words;
+if (File.Exists(wordsPath))
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+    var lines = File.ReadAllLines(wordsPath);
+    var list = new List<string>();
+    foreach (var line in lines)
+    {
+        var t = (line ?? "").Trim();
+        if (t.Length > 0) list.Add(t.ToUpper());
+    }
+    words = list.ToArray();
+}
+else
+{
+    words = new[] { "HANGMAN", "COMPUTER", "REACT", "JAVASCRIPT" };
+}
 
-app.MapGet("/weatherforecast", () =>
+// Decide difficulty: easy, medium or hard.
+string GetDifficulty(string w)
 {
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
+    if (string.IsNullOrEmpty(w)) return "easy";
+    int len = w.Length;
+    int rare = 0;
+    for (int i = 0; i < w.Length; i++)
+    {
+        var c = char.ToUpper(w[i]);
+        if ("QZXJ".IndexOf(c) >= 0) rare++;
+    }
+
+    if (len <= 4 && rare == 0) return "easy";
+    if (len <= 7) return rare > 0 ? "hard" : "medium";
+    return "hard";
+}
+
+// Points: length * factor + small rare-letter bonus.
+int ComputePoints(string w, string difficulty)
+{
+    if (string.IsNullOrEmpty(w)) return 1;
+    int len = w.Length;
+    int rare = 0;
+    for (int i = 0; i < w.Length; i++)
+    {
+        var c = char.ToUpper(w[i]);
+        if ("QZXJ".IndexOf(c) >= 0) rare++;
+    }
+    int multiplier = difficulty == "hard" ? 3 : difficulty == "medium" ? 2 : 1;
+    int points = len * multiplier + rare * 2;
+    return Math.Max(1, points);
+}
+
+app.MapGet("/api/hangman/word", (HttpRequest req) =>
+{
+    if (words.Length == 0)
+    {
+        return Results.Problem("No words available");
+    }
+
+    var q = req.Query["difficulty"].ToString()?.ToLower();
+    // words array already contains trimmed upper-case items
+    string[] candidateWords = words;
+
+    if (!string.IsNullOrEmpty(q))
+    {
+        var list = new List<string>();
+        foreach (var w in words)
+        {
+            if (string.IsNullOrEmpty(w)) continue;
+            if (GetDifficulty(w) == q) list.Add(w);
+        }
+        if (list.Count > 0) candidateWords = list.ToArray();
+    }
+
+    var word = candidateWords[Random.Shared.Next(candidateWords.Length)];
+    var difficulty = GetDifficulty(word);
+    var points = ComputePoints(word, difficulty);
+    return Results.Ok(new { word, difficulty, points });
 })
-.WithName("GetWeatherForecast");
+.WithName("GetHangmanWord");
 
 app.Run();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
+record HangmanWordResponse(string Word);

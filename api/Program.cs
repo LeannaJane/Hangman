@@ -45,8 +45,8 @@ string GetDifficulty(string w)
         if ("QZXJ".IndexOf(c) >= 0) rare++;
     }
 
-    if (len <= 4 && rare == 0) return "easy";
-    if (len <= 7) return rare > 0 ? "hard" : "medium";
+    if (len <= 6 && rare == 0) return "easy";
+    if (len <= 8) return rare > 0 ? "hard" : "medium";
     return "hard";
 }
 
